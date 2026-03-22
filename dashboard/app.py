@@ -169,6 +169,29 @@ def load_breadth(days: int = 30) -> pd.DataFrame:
     )
 
 
+@st.cache_data(ttl=300)
+def load_precomp_regime() -> pd.DataFrame:
+    return _query("SELECT * FROM precomp_regime ORDER BY trade_date")
+
+
+@st.cache_data(ttl=300)
+def load_precomp_volume(pattern_type: str) -> pd.DataFrame:
+    return _query(
+        "SELECT * FROM precomp_volume_patterns WHERE pattern_type=:t "
+        "ORDER BY trade_date, symbol",
+        {"t": pattern_type},
+    )
+
+
+@st.cache_data(ttl=300)
+def load_precomp_causality() -> pd.DataFrame:
+    return _query(
+        "SELECT * FROM precomp_causality "
+        "WHERE computed_date = (SELECT MAX(computed_date) FROM precomp_causality) "
+        "ORDER BY lag1_corr DESC"
+    )
+
+
 # â”€â”€ sample-data fallback â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 def _sample_prices() -> pd.DataFrame:
@@ -1482,22 +1505,23 @@ def page_market_regime(sel_date: date, db_ok: bool, view_period: str = "Daily"):
         st.warning("Database required for regime analysis.")
         return
 
-    pr_range = load_prices_range()
-    if pr_range.empty:
-        st.warning("No price data available.")
-        return
-
-    with st.spinner("Computing regime indicatorsâ€¦"):
-        data = _compute_regime_data(pr_range)
-
-    if "error" in data:
-        st.error(f"Regime computation error: {data['error']}")
-        return
-
-    regime_history = data["regime_history"]
+    regime_history = load_precomp_regime()
     if regime_history.empty:
-        st.info("Insufficient data for regime classification.")
-        return
+        # fallback to live compute if pre-computed table not yet populated
+        st.info("Pre-computed regime data not yet available — computing live…")
+        pr_range = load_prices_range()
+        if pr_range.empty:
+            st.warning("No price data available.")
+            return
+        with st.spinner("Computing regime indicators…"):
+            data = _compute_regime_data(pr_range)
+        if "error" in data:
+            st.error(f"Regime computation error: {data['error']}")
+            return
+        regime_history = data["regime_history"]
+        if regime_history.empty:
+            st.info("Insufficient data for regime classification.")
+            return
 
     current      = regime_history.iloc[-1]
     trend_label  = str(current.get("trend", "Unknown"))
@@ -1723,9 +1747,11 @@ def page_breakout_analysis(sel_date: date, db_ok: bool, view_period: str = "Dail
     mom = mom.rename(columns=col_labels)
 
     # â”€â”€ volume breakouts (sel_date) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-    vp_data  = _compute_volume_patterns(pr_range)
-    vol_bk   = vp_data.get("breakouts", pd.DataFrame())
-    vol_today = vol_bk[vol_bk["trade_date"] == sel_date] if not vol_bk.empty else pd.DataFrame()
+    vol_bk = load_precomp_volume("breakout")
+    if vol_bk.empty:
+        vp_data = _compute_volume_patterns(pr_range)
+        vol_bk  = vp_data.get("breakouts", pd.DataFrame())
+    vol_today = vol_bk[vol_bk["trade_date"] == pd.Timestamp(sel_date)] if not vol_bk.empty else pd.DataFrame()
 
     # â”€â”€ 52W HL from DB (only if populated) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     hl_df = load_hl(sel_date)
@@ -1851,20 +1877,24 @@ def page_volume_patterns(sel_date: date, db_ok: bool, view_period: str = "Daily"
         st.warning("Database required for volume pattern analysis.")
         return
 
-    pr_range = load_prices_range()
-    if pr_range.empty:
-        st.warning("No price data available.")
-        return
+    vol_bk = load_precomp_volume("breakout")
+    dryups = load_precomp_volume("dryup")
+    climax = load_precomp_volume("climax")
 
-    with st.spinner("Analysing volume patterns across all datesâ€¦"):
-        vp = _compute_volume_patterns(pr_range)
-
-    if "error" in vp:
-        st.error(f"Volume pattern error: {vp['error']}")
-
-    vol_bk = vp.get("breakouts", pd.DataFrame())
-    dryups = vp.get("dryups",    pd.DataFrame())
-    climax = vp.get("climax",    pd.DataFrame())
+    if vol_bk.empty and dryups.empty and climax.empty:
+        # fallback to live compute if pre-computed table not yet populated
+        st.info("Pre-computed volume data not yet available — computing live…")
+        pr_range = load_prices_range()
+        if pr_range.empty:
+            st.warning("No price data available.")
+            return
+        with st.spinner("Analysing volume patterns across all dates…"):
+            vp = _compute_volume_patterns(pr_range)
+        if "error" in vp:
+            st.error(f"Volume pattern error: {vp['error']}")
+        vol_bk = vp.get("breakouts", pd.DataFrame())
+        dryups = vp.get("dryups",    pd.DataFrame())
+        climax = vp.get("climax",    pd.DataFrame())
 
     def _today(df):
         if df.empty or "trade_date" not in df.columns:
@@ -2016,26 +2046,53 @@ def page_causality_analysis(sel_date: date, db_ok: bool, view_period: str = "Dai
         st.warning("Database required for causality analysis.")
         return
 
-    pr_range = load_prices_range()
-    if pr_range.empty:
-        st.warning("No price data available.")
-        return
+    leaders = load_precomp_causality()
 
-    with st.spinner("Computing lead-lag relationshipsâ€¦"):
-        data = _compute_causality(pr_range)
+    # scalar metadata stored in each row
+    avg_corr = float(leaders["avg_corr"].iloc[0]) if not leaders.empty else 0.0
+    n_dates  = int(leaders["n_dates"].iloc[0])    if not leaders.empty else 0
+    symbols  = leaders["symbol"].tolist()          if not leaders.empty else []
 
-    if "error" in data:
-        st.error(f"Causality computation error: {data['error']}")
-        return
+    # For correlation matrix and explorer tabs we still need the live analyzer
+    # (pre-compute only stores the leaders table, not the full matrix)
+    corr_mat  = pd.DataFrame()
+    clustered = pd.DataFrame()
+    analyzer  = None
+    lag_profile = pd.DataFrame()
 
-    symbols     = data["symbols"]
-    n_dates     = data["n_dates"]
-    avg_corr    = data["avg_corr"]
-    leaders     = data["leaders"]
-    lag_profile = data["lag_profile"]
-    corr_mat    = data["corr_matrix"]
-    clustered   = data["clustered"]
-    analyzer    = data["analyzer"]
+    if leaders.empty:
+        # fallback to live compute if pre-computed table not yet populated
+        st.info("Pre-computed causality data not yet available — computing live…")
+        pr_range = load_prices_range()
+        if pr_range.empty:
+            st.warning("No price data available.")
+            return
+        with st.spinner("Computing lead-lag relationships…"):
+            data = _compute_causality(pr_range)
+        if "error" in data:
+            st.error(f"Causality computation error: {data['error']}")
+            return
+        symbols     = data["symbols"]
+        n_dates     = data["n_dates"]
+        avg_corr    = data["avg_corr"]
+        leaders     = data["leaders"]
+        lag_profile = data["lag_profile"]
+        corr_mat    = data["corr_matrix"]
+        clustered   = data["clustered"]
+        analyzer    = data["analyzer"]
+    else:
+        # Load live analyzer for correlation matrix + explorer (fast — cached)
+        pr_range = load_prices_range()
+        if not pr_range.empty:
+            try:
+                with st.spinner("Loading correlation matrix…"):
+                    live = _compute_causality(pr_range)
+                corr_mat    = live.get("corr_matrix",  pd.DataFrame())
+                clustered   = live.get("clustered",    pd.DataFrame())
+                analyzer    = live.get("analyzer")
+                lag_profile = live.get("lag_profile",  pd.DataFrame())
+            except Exception:
+                pass
 
     # â”€â”€ metrics â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     c1, c2, c3 = st.columns(3)

@@ -174,3 +174,59 @@ FROM fact_daily_prices
 WHERE is_index = FALSE
 GROUP BY trade_date
 ORDER BY trade_date DESC;
+-- ============================================================
+-- Pre-computed analytics tables (populated by scripts/precompute_analytics.py)
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS precomp_regime (
+    id                SERIAL PRIMARY KEY,
+    computed_date     DATE    NOT NULL,
+    trade_date        DATE    NOT NULL,
+    close_price       NUMERIC,
+    trend             TEXT,
+    volatility_regime TEXT,
+    market_regime     TEXT,
+    adx               NUMERIC,
+    rsi               NUMERIC,
+    macd_hist         NUMERIC,
+    atr_pct           NUMERIC,
+    created_at        TIMESTAMPTZ DEFAULT NOW(),
+    UNIQUE (computed_date, trade_date)
+);
+
+CREATE TABLE IF NOT EXISTS precomp_volume_patterns (
+    id                  SERIAL PRIMARY KEY,
+    computed_date       DATE    NOT NULL,
+    pattern_type        TEXT    NOT NULL,
+    symbol              TEXT    NOT NULL,
+    trade_date          DATE    NOT NULL,
+    net_traded_qty      BIGINT,
+    volume_ma           NUMERIC,
+    breakout_magnitude  NUMERIC,
+    price_change        NUMERIC,
+    dryup_streak        INTEGER,
+    price_range_pct     NUMERIC,
+    price_direction     TEXT,
+    created_at          TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS precomp_causality (
+    id            SERIAL PRIMARY KEY,
+    computed_date DATE    NOT NULL,
+    symbol        TEXT    NOT NULL,
+    lag1_corr     NUMERIC,
+    direction     TEXT,
+    strength      TEXT,
+    avg_corr      NUMERIC,
+    n_dates       INTEGER,
+    created_at    TIMESTAMPTZ DEFAULT NOW(),
+    UNIQUE (computed_date, symbol)
+);
+
+-- Indexes on hot query columns
+CREATE INDEX IF NOT EXISTS idx_daily_prices_date        ON fact_daily_prices (trade_date);
+CREATE INDEX IF NOT EXISTS idx_daily_prices_symbol      ON fact_daily_prices (symbol);
+CREATE INDEX IF NOT EXISTS idx_daily_prices_date_symbol ON fact_daily_prices (trade_date, symbol);
+CREATE INDEX IF NOT EXISTS idx_precomp_regime_date      ON precomp_regime (computed_date, trade_date);
+CREATE INDEX IF NOT EXISTS idx_precomp_vol_date         ON precomp_volume_patterns (computed_date, pattern_type);
+CREATE INDEX IF NOT EXISTS idx_precomp_caus_date        ON precomp_causality (computed_date);
