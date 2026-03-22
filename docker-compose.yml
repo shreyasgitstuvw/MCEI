@@ -1,0 +1,47 @@
+version: "3.9"
+
+services:
+
+  # ── PostgreSQL database ─────────────────────────────────────────────────────
+  postgres:
+    image: postgres:15-alpine
+    container_name: nse_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB:       nse_analytics
+      POSTGRES_USER:     nse_user
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-changeme}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./scripts/create_schema.sql:/docker-entrypoint-initdb.d/01_schema.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U nse_user -d nse_analytics"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── Streamlit dashboard ─────────────────────────────────────────────────────
+  dashboard:
+    build: .
+    container_name: nse_dashboard
+    restart: unless-stopped
+    ports:
+      - "8501:8501"
+    environment:
+      DB_HOST:     postgres
+      DB_PORT:     5432
+      DB_NAME:     nse_analytics
+      DB_USER:     nse_user
+      DB_PASSWORD: ${DB_PASSWORD:-changeme}
+      APP_ENV:     production
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  postgres_data:

@@ -1,0 +1,96 @@
+# ============================================================
+# NSE Analytics Platform - Application Configuration
+# ============================================================
+
+app:
+  name: "NSE Advanced Analytics Platform"
+  version: "1.0.0"
+  environment: "development"
+
+database:
+  pool_size: 5
+  max_overflow: 10
+  pool_timeout: 30
+  pool_recycle: 1800
+
+etl:
+  # Files expected in each daily bhavcopy ZIP
+  expected_files:
+    - prefix: "pr"
+      ext: ".csv"
+      description: "Price data"
+    - prefix: "pd"
+      ext: ".csv"
+      description: "Detailed price data"
+    - prefix: "bh"
+      ext: ".csv"
+      description: "Price bands hit"
+    - prefix: "bc"
+      ext: ".csv"
+      description: "Corporate actions"
+    - prefix: "gl"
+      ext: ".csv"
+      description: "Gainers and losers"
+    - prefix: "hl"
+      ext: ".csv"
+      description: "52-week highs and lows"
+    - prefix: "etf"
+      ext: ".csv"
+      description: "ETF data"
+    - prefix: "sme"
+      ext: ".csv"
+      description: "SME data"
+    - prefix: "tt"
+      ext: ".csv"
+      description: "Top traded"
+    - prefix: "mcap"
+      ext: ".csv"
+      description: "Market capitalisation"
+    - prefix: "corpbond"
+      ext: ".csv"
+      description: "Corporate bonds"
+    - prefix: "an"
+      ext: ".txt"
+      description: "Announcements"
+    - prefix: "bm"
+      ext: ".txt"
+      description: "Board meetings"
+
+  batch_size: 1000
+  max_retries: 3
+
+analytics:
+  # Lookback windows (in trading days)
+  short_window: 5
+  medium_window: 20
+  long_window: 200
+
+  # Circuit breaker thresholds
+  circuit:
+    min_consecutive_days: 2
+    volume_threshold_multiplier: 3.0
+    pump_dump_min_circuits: 3
+
+  # Breakout thresholds
+  breakout:
+    volume_multiplier: 2.0
+    lookback_days: 20
+    forward_days: [5, 10, 20]
+
+  # Market regime
+  regime:
+    n_clusters: 4
+    adx_trend_threshold: 25
+
+dashboard:
+  default_lookback_days: 30
+  max_symbols_display: 50
+  chart_height: 450
+  theme: "plotly_dark"
+
+logging:
+  level: "INFO"
+  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+  file: "logs/nse_analytics.log"
+  max_bytes: 10485760   # 10 MB
+  backup_count: 5
