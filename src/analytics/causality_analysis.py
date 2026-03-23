@@ -86,24 +86,30 @@ class LeadLagAnalyzer:
             raise ValueError(f"Symbol '{symbol}' not found in price data")
 
         sym_ret = self.returns[symbol].dropna()
+        sym_ret = sym_ret[~sym_ret.index.duplicated(keep="last")]
         records = []
         for lag in range(-max_lag, max_lag + 1):
             for other in self.returns.columns:
                 if other == symbol:
                     continue
                 other_ret = self.returns[other].dropna()
+                other_ret = other_ret[~other_ret.index.duplicated(keep="last")]
                 if lag >= 0:
-                    s1 = sym_ret.shift(lag)   # symbol leads by lag days
+                    s1 = sym_ret.shift(lag)
                     s2 = other_ret
                 else:
                     s1 = sym_ret
-                    s2 = other_ret.shift(-lag)  # other leads
-                s1 = s1[~s1.index.duplicated(keep="first")]
-                s2 = s2[~s2.index.duplicated(keep="first")]
-                aligned = pd.concat([s1, s2], axis=1).dropna()
-                if len(aligned) < 5:
+                    s2 = other_ret.shift(-lag)
+                # Align via common dates — avoids any reindex on duplicate labels
+                common = s1.index.intersection(s2.index)
+                if len(common) < 5:
                     continue
-                corr = aligned.iloc[:, 0].corr(aligned.iloc[:, 1])
+                v1 = s1.loc[common].values
+                v2 = s2.loc[common].values
+                mask = np.isfinite(v1) & np.isfinite(v2)
+                if mask.sum() < 5:
+                    continue
+                corr = float(np.corrcoef(v1[mask], v2[mask])[0, 1])
                 records.append({"lag": lag, "symbol": other, "correlation": corr})
 
         df = pd.DataFrame(records)
@@ -126,10 +132,20 @@ class LeadLagAnalyzer:
             Sorted by abs(lag1_corr) descending.
         """
         market = self._market_return
+        market = market[~market.index.duplicated(keep="last")]
         records = []
         for sym in self.returns.columns:
-            sym_ret = self.returns[sym].shift(1)  # yesterday's return
-            aligned = pd.concat([sym_ret, market], axis=1).dropna()
+            sym_ret = self.returns[sym].shift(1).dropna()
+            sym_ret = sym_ret[~sym_ret.index.duplicated(keep="last")]
+            common = sym_ret.index.intersection(market.index)
+            if len(common) < 5:
+                continue
+            v1 = sym_ret.loc[common].values
+            v2 = market.loc[common].values
+            mask = np.isfinite(v1) & np.isfinite(v2)
+            if mask.sum() < 5:
+                continue
+            aligned = pd.DataFrame({"sym": v1[mask], "mkt": v2[mask]})
             if len(aligned) < 5:
                 continue
             corr = aligned.iloc[:, 0].corr(aligned.iloc[:, 1])
@@ -206,17 +222,25 @@ class LeadLagAnalyzer:
         -------
         pd.DataFrame  columns: lag, avg_abs_corr, n_pairs
         """
-        market = self._market_return
+        mkt_base = self._market_return
+        mkt_base = mkt_base[~mkt_base.index.duplicated(keep="last")]
         records = []
         for lag in range(-max_lag, max_lag + 1):
             corrs = []
             for sym in self.returns.columns:
-                sym_ret = self.returns[sym].shift(lag) if lag >= 0 else self.returns[sym]
-                mkt = market if lag >= 0 else market.shift(-lag)
-                aligned = pd.concat([sym_ret, mkt], axis=1).dropna()
-                if len(aligned) < 5:
+                sr = self.returns[sym]
+                sr = sr[~sr.index.duplicated(keep="last")]
+                sym_ret = sr.shift(lag) if lag >= 0 else sr
+                mkt = mkt_base if lag >= 0 else mkt_base.shift(-lag)
+                common = sym_ret.index.intersection(mkt.index)
+                if len(common) < 5:
                     continue
-                c = aligned.iloc[:, 0].corr(aligned.iloc[:, 1])
+                v1 = sym_ret.loc[common].values
+                v2 = mkt.loc[common].values
+                mask = np.isfinite(v1) & np.isfinite(v2)
+                if mask.sum() < 5:
+                    continue
+                c = float(np.corrcoef(v1[mask], v2[mask])[0, 1])
                 if not np.isnan(c):
                     corrs.append(abs(c))
             records.append(
