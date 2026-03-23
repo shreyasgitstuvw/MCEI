@@ -58,7 +58,10 @@ def _db_available() -> bool:
         with get_engine().connect() as c:
             c.execute(text("SELECT 1"))
         return True
-    except Exception:
+    except Exception as e:
+        # Store error for sidebar display
+        import streamlit as _st
+        _st.session_state["_db_error"] = str(e)
         return False
 
 
@@ -222,9 +225,13 @@ def _sidebar() -> tuple[str, date, bool, str]:
 
         db_ok = _db_available()
         if db_ok:
-            st.success("ðŸŸ¢ Database connected")
+            st.success(“ðŸŸ¢ Database connected”)
         else:
-            st.warning("ðŸŸ¡ DB offline â€” using sample data")
+            st.warning(“ðŸŸ¡ DB offline â€” using sample data”)
+            err = st.session_state.get(“_db_error”, “”)
+            if err:
+                with st.expander(“DB error details”):
+                    st.code(err)
 
         latest = _latest_date() if db_ok else date.today()
         sel_date = st.date_input("ðŸ“… Trading Date", value=latest,

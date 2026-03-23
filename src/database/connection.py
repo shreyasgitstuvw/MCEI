@@ -21,7 +21,7 @@ def get_database_url() -> str:
                 f"{db.get('DB_HOST', 'localhost')}:"
                 f"{db.get('DB_PORT', '5432')}/"
                 f"{db.get('DB_NAME', 'bhavcopy_db')}"
-                f"?sslmode=require"
+                f"?sslmode=require&channel_binding=require"
             )
     except Exception:
         pass  # not running inside Streamlit — use env vars
