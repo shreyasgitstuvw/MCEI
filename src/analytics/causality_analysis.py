@@ -93,6 +93,8 @@ class LeadLagAnalyzer:
                 else:
                     s1 = sym_ret
                     s2 = other_ret.shift(-lag)  # other leads
+                s1 = s1[~s1.index.duplicated(keep="first")]
+                s2 = s2[~s2.index.duplicated(keep="first")]
                 aligned = pd.concat([s1, s2], axis=1).dropna()
                 if len(aligned) < 5:
                     continue

@@ -641,7 +641,7 @@ def page_microstructure(sel_date: date, db_ok: bool, view_period: str = "Daily")
                     class_counts.columns = ["class", "count"]
                     fig2 = px.pie(class_counts, names="class", values="count",
                                   title="Liquidity Class Distribution",
-                                  color_discrete_sequence=px.colors.sequential.RdYlGn)
+                                  color_discrete_sequence=px.colors.diverging.RdYlGn)
                     fig2.update_layout(height=350)
                     st.plotly_chart(fig2, use_container_width=True)
 
@@ -1513,6 +1513,7 @@ def page_market_regime(sel_date: date, db_ok: bool, view_period: str = "Daily"):
         return
 
     regime_history = load_precomp_regime()
+    data = {}
     if regime_history.empty:
         # fallback to live compute if pre-computed table not yet populated
         st.info("Pre-computed regime data not yet available — computing live…")
@@ -1529,6 +1530,18 @@ def page_market_regime(sel_date: date, db_ok: bool, view_period: str = "Daily"):
         if regime_history.empty:
             st.info("Insufficient data for regime classification.")
             return
+    else:
+        # Build tab data from precomputed columns
+        rh = regime_history.copy()
+        rh["trade_date"] = pd.to_datetime(rh["trade_date"])
+        data["trend"]    = rh[["trade_date", "close_price", "adx"]].dropna(subset=["close_price"])
+        data["volatility"] = rh[["trade_date", "atr_pct"]].rename(columns={"atr_pct": "volatility"}).dropna(subset=["volatility"])
+        data["momentum"] = rh[["trade_date", "rsi", "macd_hist"]].dropna(subset=["rsi"])
+        data["breadth"]  = pd.DataFrame()
+        regime_shifted   = rh["market_regime"].shift(1)
+        changes          = rh[rh["market_regime"] != regime_shifted].copy()
+        data["regime_changes"] = changes[["trade_date", "market_regime"]].rename(
+            columns={"market_regime": "new_regime"}) if not changes.empty else pd.DataFrame()
 
     current      = regime_history.iloc[-1]
     trend_label  = str(current.get("trend", "Unknown"))
