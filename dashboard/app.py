@@ -2104,15 +2104,15 @@ def page_causality_analysis(sel_date: date, db_ok: bool, view_period: str = "Dai
         # Load live analyzer for correlation matrix + explorer (fast — cached)
         pr_range = load_prices_range()
         if not pr_range.empty:
-            try:
-                with st.spinner("Loading correlation matrix…"):
-                    live = _compute_causality(pr_range)
+            with st.spinner("Loading correlation matrix…"):
+                live = _compute_causality(pr_range)
+            if "error" in live:
+                st.warning(f"Analyzer error: {live['error']}")
+            else:
                 corr_mat    = live.get("corr_matrix",  pd.DataFrame())
                 clustered   = live.get("clustered",    pd.DataFrame())
                 analyzer    = live.get("analyzer")
                 lag_profile = live.get("lag_profile",  pd.DataFrame())
-            except Exception:
-                pass
 
     # â”€â”€ metrics â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     c1, c2, c3 = st.columns(3)
@@ -2203,7 +2203,9 @@ def page_causality_analysis(sel_date: date, db_ok: bool, view_period: str = "Dai
     # â”€â”€ Tab 3: Lead-Lag Explorer â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     with tab_explorer:
         st.subheader("Pair Lead-Lag Explorer")
-        if len(symbols) < 2:
+        if analyzer is None:
+            st.info("Analyzer unavailable — click Refresh Data in the sidebar and retry.")
+        elif len(symbols) < 2:
             st.info("Need at least 2 symbols for pair analysis.")
         else:
             col_a, col_b = st.columns(2)
