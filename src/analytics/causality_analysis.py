@@ -201,11 +201,15 @@ class LeadLagAnalyzer:
         if corr.empty or len(corr) < 2:
             return corr
 
+        # Fill NaN correlations (insufficient overlap) with 0 before clustering
+        corr = corr.fillna(0)
+
         # Convert correlation distance (1 - |corr|) to condensed form
         dist = 1 - corr.abs()
         np.fill_diagonal(dist.values, 0)
         condensed = squareform(dist.values, checks=False)
-        condensed = np.clip(condensed, 0, None)  # avoid tiny negatives from float
+        condensed = np.clip(condensed, 0, 2)  # ensure finite [0, 2]
+        condensed = np.nan_to_num(condensed, nan=1.0, posinf=2.0, neginf=0.0)
 
         linkage = hierarchy.linkage(condensed, method="ward")
         order = hierarchy.leaves_list(linkage)
