@@ -225,12 +225,12 @@ def _sidebar() -> tuple[str, date, bool, str]:
 
         db_ok = _db_available()
         if db_ok:
-            st.success(“ðŸŸ¢ Database connected”)
+            st.success("DB online")
         else:
-            st.warning(“ðŸŸ¡ DB offline â€” using sample data”)
-            err = st.session_state.get(“_db_error”, “”)
+            st.warning("DB offline -- using sample data")
+            err = st.session_state.get("_db_error", "")
             if err:
-                with st.expander(“DB error details”):
+                with st.expander("DB error details"):
                     st.code(err)
 
         latest = _latest_date() if db_ok else date.today()
