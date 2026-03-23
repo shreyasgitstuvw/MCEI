@@ -2113,6 +2113,13 @@ def page_causality_analysis(sel_date: date, db_ok: bool, view_period: str = "Dai
                 clustered   = live.get("clustered",    pd.DataFrame())
                 analyzer    = live.get("analyzer")
                 lag_profile = live.get("lag_profile",  pd.DataFrame())
+                with st.expander("Debug info", expanded=False):
+                    st.write(f"corr_mat shape: {corr_mat.shape}, empty: {corr_mat.empty}")
+                    st.write(f"clustered shape: {clustered.shape}, empty: {clustered.empty}")
+                    st.write(f"lag_profile rows: {len(lag_profile)}, cols: {list(lag_profile.columns) if not lag_profile.empty else []}")
+                    st.write(f"analyzer symbols: {len(analyzer.symbols) if analyzer else 0}")
+                    if not lag_profile.empty:
+                        st.write(f"lag_profile sample:\n{lag_profile.head()}")
 
     # â”€â”€ metrics â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     c1, c2, c3 = st.columns(3)
@@ -2219,6 +2226,9 @@ def page_causality_analysis(sel_date: date, db_ok: bool, view_period: str = "Dai
             else:
                 try:
                     ll_df = analyzer.lead_lag_correlation(sym_a, max_lag=5)
+                    if ll_df.empty or "symbol" not in ll_df.columns:
+                        st.info(f"No lead-lag data for {sym_a} (insufficient overlapping dates).")
+                        st.stop()
                     pair_df = ll_df[ll_df["symbol"] == sym_b].copy()
                     if pair_df.empty:
                         st.info(f"No lead-lag data for {sym_a} â†’ {sym_b}.")
