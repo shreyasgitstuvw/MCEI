@@ -36,10 +36,15 @@ class LeadLagAnalyzer:
         eq = price_data[~price_data["is_index"].fillna(False)].copy()
         eq["trade_date"] = pd.to_datetime(eq["trade_date"])
 
+        # Drop duplicate (date, symbol) pairs before pivoting
+        eq = eq.drop_duplicates(subset=["trade_date", "symbol"], keep="last")
+
         # Pivot: rows = trade_date, cols = symbol
         pivot = eq.pivot_table(
-            index="trade_date", columns="symbol", values="close_price"
+            index="trade_date", columns="symbol", values="close_price", aggfunc="last"
         )
+        # Ensure unique date index
+        pivot = pivot[~pivot.index.duplicated(keep="last")]
         # Daily log-returns (more stationary than price levels)
         self.returns: pd.DataFrame = np.log(pivot / pivot.shift(1)).dropna(how="all")
         self.symbols: list[str] = list(self.returns.columns)
