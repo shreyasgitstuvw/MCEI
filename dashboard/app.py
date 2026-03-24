@@ -2136,12 +2136,16 @@ def page_causality_analysis(sel_date: date, db_ok: bool, view_period: str = "Dai
         if corr_mat.empty:
             st.info("Not enough data to compute correlations.")
         else:
+            _cm = corr_mat.fillna(0)
             fig = px.imshow(
-                corr_mat.fillna(0),
+                _cm.values,
+                x=list(_cm.columns),
+                y=list(_cm.index),
                 color_continuous_scale="RdBu_r",
                 zmin=-1, zmax=1,
-                title="Pearson Correlation Matrix — Top 30 Stocks",
+                title="Pearson Correlation Matrix - Top 30 Stocks",
                 labels=dict(color="Correlation"),
+                aspect="auto",
             )
             fig.update_layout(
                 height=600,
@@ -2181,13 +2185,14 @@ def page_causality_analysis(sel_date: date, db_ok: bool, view_period: str = "Dai
                 use_container_width=True, hide_index=True,
             )
 
-        if not lag_profile.empty:
+        _lp = lag_profile.dropna(subset=["avg_abs_corr"]) if not lag_profile.empty else lag_profile
+        if not _lp.empty:
             st.markdown("---")
             st.subheader("Market-Wide Lag Profile")
             st.caption("Average absolute correlation between each stock and the market "
                        "at each lag. Higher bars = stronger lead/lag structure.")
             fig2 = px.bar(
-                lag_profile, x="lag", y="avg_abs_corr",
+                _lp, x="lag", y="avg_abs_corr",
                 color="avg_abs_corr", color_continuous_scale="Blues",
                 title="Avg |Correlation| vs. Market at Each Lag",
                 labels={"lag": "Lag (days)", "avg_abs_corr": "Avg |Corr|"},
@@ -2273,12 +2278,16 @@ def page_causality_analysis(sel_date: date, db_ok: bool, view_period: str = "Dai
         if clustered.empty:
             st.info("Not enough data for clustering.")
         else:
+            _cl = clustered.fillna(0)
             fig_cl = px.imshow(
-                clustered.fillna(0),
+                _cl.values,
+                x=list(_cl.columns),
+                y=list(_cl.index),
                 color_continuous_scale="RdBu_r",
                 zmin=-1, zmax=1,
                 title="Clustered Correlation Matrix",
                 labels=dict(color="Correlation"),
+                aspect="auto",
             )
             fig_cl.update_layout(
                 height=620,
