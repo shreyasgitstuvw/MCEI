@@ -2137,20 +2137,20 @@ def page_causality_analysis(sel_date: date, db_ok: bool, view_period: str = "Dai
             st.info("Not enough data to compute correlations.")
         else:
             _cm = corr_mat.fillna(0)
-            fig = px.imshow(
-                _cm.values,
+            fig = go.Figure(data=go.Heatmap(
+                z=_cm.values.tolist(),
                 x=list(_cm.columns),
                 y=list(_cm.index),
-                color_continuous_scale="RdBu_r",
+                colorscale="RdBu_r",
                 zmin=-1, zmax=1,
-                title="Pearson Correlation Matrix - Top 30 Stocks",
-                labels=dict(color="Correlation"),
-                aspect="auto",
-            )
+                colorbar=dict(title="Corr"),
+            ))
             fig.update_layout(
+                title="Pearson Correlation Matrix - Top 30 Stocks",
                 height=600,
                 plot_bgcolor="#0e1117", paper_bgcolor="#0e1117",
                 font_color="#fff", margin=dict(l=100, r=20, t=40, b=100),
+                xaxis=dict(tickangle=-45),
             )
             st.plotly_chart(fig, use_container_width=True)
             st.caption("Values close to 1 = strong co-movement. Values near 0 = independent movement.")
@@ -2191,14 +2191,16 @@ def page_causality_analysis(sel_date: date, db_ok: bool, view_period: str = "Dai
             st.subheader("Market-Wide Lag Profile")
             st.caption("Average absolute correlation between each stock and the market "
                        "at each lag. Higher bars = stronger lead/lag structure.")
-            fig2 = px.bar(
-                _lp, x="lag", y="avg_abs_corr",
-                color="avg_abs_corr", color_continuous_scale="Blues",
-                title="Avg |Correlation| vs. Market at Each Lag",
-                labels={"lag": "Lag (days)", "avg_abs_corr": "Avg |Corr|"},
-                text="n_pairs",
-            )
+            fig2 = go.Figure(data=go.Bar(
+                x=_lp["lag"].tolist(),
+                y=_lp["avg_abs_corr"].tolist(),
+                text=_lp["n_pairs"].tolist(),
+                textposition="outside",
+                marker_color="#4facfe",
+            ))
             fig2.update_layout(
+                title="Avg |Correlation| vs. Market at Each Lag",
+                xaxis_title="Lag (days)", yaxis_title="Avg |Corr|",
                 height=300,
                 plot_bgcolor="#0e1117", paper_bgcolor="#0e1117",
                 font_color="#fff", margin=dict(l=40, r=20, t=40, b=40),
@@ -2279,20 +2281,20 @@ def page_causality_analysis(sel_date: date, db_ok: bool, view_period: str = "Dai
             st.info("Not enough data for clustering.")
         else:
             _cl = clustered.fillna(0)
-            fig_cl = px.imshow(
-                _cl.values,
+            fig_cl = go.Figure(data=go.Heatmap(
+                z=_cl.values.tolist(),
                 x=list(_cl.columns),
                 y=list(_cl.index),
-                color_continuous_scale="RdBu_r",
+                colorscale="RdBu_r",
                 zmin=-1, zmax=1,
-                title="Clustered Correlation Matrix",
-                labels=dict(color="Correlation"),
-                aspect="auto",
-            )
+                colorbar=dict(title="Corr"),
+            ))
             fig_cl.update_layout(
+                title="Clustered Correlation Matrix",
                 height=620,
                 plot_bgcolor="#0e1117", paper_bgcolor="#0e1117",
                 font_color="#fff", margin=dict(l=100, r=20, t=40, b=100),
+                xaxis=dict(tickangle=-45),
             )
             st.plotly_chart(fig_cl, use_container_width=True)
 
