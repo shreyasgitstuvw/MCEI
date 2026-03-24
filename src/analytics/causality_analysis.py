@@ -85,32 +85,21 @@ class LeadLagAnalyzer:
         if symbol not in self.returns.columns:
             raise ValueError(f"Symbol '{symbol}' not found in price data")
 
-        sym_ret = self.returns[symbol].dropna()
-        sym_ret = sym_ret[~sym_ret.index.duplicated(keep="last")]
+        sym_ret = self.returns[symbol]
+        others = self.returns.drop(columns=[symbol])
         records = []
+
         for lag in range(-max_lag, max_lag + 1):
-            for other in self.returns.columns:
-                if other == symbol:
-                    continue
-                other_ret = self.returns[other].dropna()
-                other_ret = other_ret[~other_ret.index.duplicated(keep="last")]
-                if lag >= 0:
-                    s1 = sym_ret.shift(lag)
-                    s2 = other_ret
-                else:
-                    s1 = sym_ret
-                    s2 = other_ret.shift(-lag)
-                # Align via common dates — avoids any reindex on duplicate labels
-                common = s1.index.intersection(s2.index)
-                if len(common) < 5:
-                    continue
-                v1 = s1.loc[common].values
-                v2 = s2.loc[common].values
-                mask = np.isfinite(v1) & np.isfinite(v2)
-                if mask.sum() < 5:
-                    continue
-                corr = float(np.corrcoef(v1[mask], v2[mask])[0, 1])
-                records.append({"lag": lag, "symbol": other, "correlation": corr})
+            if lag >= 0:
+                # symbol leads: correlate shifted symbol against others at t
+                corrs = others.corrwith(sym_ret.shift(lag))
+            else:
+                # symbol lags: correlate symbol against shifted others at t
+                corrs = others.shift(-lag).corrwith(sym_ret)
+
+            for sym, c in corrs.items():
+                if not np.isnan(c):
+                    records.append({"lag": lag, "symbol": sym, "correlation": c})
 
         df = pd.DataFrame(records)
         if df.empty:
@@ -132,44 +121,23 @@ class LeadLagAnalyzer:
             Sorted by abs(lag1_corr) descending.
         """
         market = self._market_return
-        market = market[~market.index.duplicated(keep="last")]
-        records = []
-        for sym in self.returns.columns:
-            sym_ret = self.returns[sym].shift(1).dropna()
-            sym_ret = sym_ret[~sym_ret.index.duplicated(keep="last")]
-            common = sym_ret.index.intersection(market.index)
-            if len(common) < 5:
-                continue
-            v1 = sym_ret.loc[common].values
-            v2 = market.loc[common].values
-            mask = np.isfinite(v1) & np.isfinite(v2)
-            if mask.sum() < 5:
-                continue
-            aligned = pd.DataFrame({"sym": v1[mask], "mkt": v2[mask]})
-            if len(aligned) < 5:
-                continue
-            corr = aligned.iloc[:, 0].corr(aligned.iloc[:, 1])
-            if np.isnan(corr):
-                continue
-            records.append(
-                {
-                    "symbol": sym,
-                    "lag1_corr": round(corr, 4),
-                    "direction": "Leading +" if corr > 0 else "Leading −",
-                    "strength": "Strong" if abs(corr) > 0.4 else (
-                        "Moderate" if abs(corr) > 0.2 else "Weak"
-                    ),
-                }
-            )
+        # Correlate each stock's lag-1 return with the market return at t
+        corrs = self.returns.shift(1).corrwith(market).dropna()
+        if corrs.empty:
+            return pd.DataFrame(columns=["symbol", "lag1_corr", "direction", "strength"])
 
-        df = pd.DataFrame(records)
-        if df.empty:
-            return df
-        return (
-            df.reindex(df["lag1_corr"].abs().nlargest(top_n).index)
-            .sort_values("lag1_corr", key=abs, ascending=False)
-            .reset_index(drop=True)
+        top = corrs.abs().nlargest(top_n)
+        corrs = corrs.loc[top.index].sort_values(key=abs, ascending=False)
+
+        df = pd.DataFrame({
+            "symbol": corrs.index,
+            "lag1_corr": corrs.round(4).values,
+        })
+        df["direction"] = df["lag1_corr"].apply(lambda c: "Leading +" if c > 0 else "Leading \u2212")
+        df["strength"] = df["lag1_corr"].abs().apply(
+            lambda c: "Strong" if c > 0.4 else ("Moderate" if c > 0.2 else "Weak")
         )
+        return df.reset_index(drop=True)
 
     def rolling_correlation(
         self, sym1: str, sym2: str, window: int = 10
@@ -226,31 +194,20 @@ class LeadLagAnalyzer:
         -------
         pd.DataFrame  columns: lag, avg_abs_corr, n_pairs
         """
-        mkt_base = self._market_return
-        mkt_base = mkt_base[~mkt_base.index.duplicated(keep="last")]
+        market = self._market_return
         records = []
         for lag in range(-max_lag, max_lag + 1):
-            corrs = []
-            for sym in self.returns.columns:
-                sr = self.returns[sym]
-                sr = sr[~sr.index.duplicated(keep="last")]
-                sym_ret = sr.shift(lag) if lag >= 0 else sr
-                mkt = mkt_base if lag >= 0 else mkt_base.shift(-lag)
-                common = sym_ret.index.intersection(mkt.index)
-                if len(common) < 5:
-                    continue
-                v1 = sym_ret.loc[common].values
-                v2 = mkt.loc[common].values
-                mask = np.isfinite(v1) & np.isfinite(v2)
-                if mask.sum() < 5:
-                    continue
-                c = float(np.corrcoef(v1[mask], v2[mask])[0, 1])
-                if not np.isnan(c):
-                    corrs.append(abs(c))
+            if lag >= 0:
+                # stocks lead: shifted stock returns vs market at t
+                corrs = self.returns.shift(lag).corrwith(market).dropna().abs()
+            else:
+                # stocks lag: stock returns vs shifted market
+                corrs = self.returns.corrwith(market.shift(-lag)).dropna().abs()
+
             records.append(
                 {
                     "lag": lag,
-                    "avg_abs_corr": round(np.mean(corrs), 4) if corrs else np.nan,
+                    "avg_abs_corr": round(float(corrs.mean()), 4) if len(corrs) > 0 else np.nan,
                     "n_pairs": len(corrs),
                 }
             )

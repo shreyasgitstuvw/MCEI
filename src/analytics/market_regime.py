@@ -136,7 +136,7 @@ class MarketRegimeClassifier:
                 'declines': (x['price_change'] < 0).sum(),
                 'unchanged': (x['price_change'] == 0).sum(),
                 'total_stocks': len(x)
-            })
+            }), include_groups=False
         ).reset_index()
 
         # Advance/Decline ratio

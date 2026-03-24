@@ -2113,13 +2113,6 @@ def page_causality_analysis(sel_date: date, db_ok: bool, view_period: str = "Dai
                 clustered   = live.get("clustered",    pd.DataFrame())
                 analyzer    = live.get("analyzer")
                 lag_profile = live.get("lag_profile",  pd.DataFrame())
-                with st.expander("Debug info", expanded=False):
-                    st.write(f"corr_mat shape: {corr_mat.shape}, empty: {corr_mat.empty}")
-                    st.write(f"clustered shape: {clustered.shape}, empty: {clustered.empty}")
-                    st.write(f"lag_profile rows: {len(lag_profile)}, cols: {list(lag_profile.columns) if not lag_profile.empty else []}")
-                    st.write(f"analyzer symbols: {len(analyzer.symbols) if analyzer else 0}")
-                    if not lag_profile.empty:
-                        st.write(f"lag_profile sample:\n{lag_profile.head()}")
 
     # â”€â”€ metrics â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     c1, c2, c3 = st.columns(3)
@@ -2144,11 +2137,11 @@ def page_causality_analysis(sel_date: date, db_ok: bool, view_period: str = "Dai
             st.info("Not enough data to compute correlations.")
         else:
             fig = px.imshow(
-                corr_mat,
-                color_continuous_scale="RdBu_r",
+                corr_mat.fillna(0),
+                color_continuous_scale=”RdBu_r”,
                 zmin=-1, zmax=1,
-                title="Pearson Correlation Matrix â€” Top 30 Stocks",
-                labels=dict(color="Correlation"),
+                title=”Pearson Correlation Matrix \u2014 Top 30 Stocks”,
+                labels=dict(color=”Correlation”),
             )
             fig.update_layout(
                 height=600,
@@ -2281,7 +2274,7 @@ def page_causality_analysis(sel_date: date, db_ok: bool, view_period: str = "Dai
             st.info("Not enough data for clustering.")
         else:
             fig_cl = px.imshow(
-                clustered,
+                clustered.fillna(0),
                 color_continuous_scale="RdBu_r",
                 zmin=-1, zmax=1,
                 title="Clustered Correlation Matrix",

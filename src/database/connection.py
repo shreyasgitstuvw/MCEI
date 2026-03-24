@@ -27,11 +27,11 @@ def get_database_url() -> str:
         pass  # not running inside Streamlit — use env vars
 
     return (
-        f"postgresql://{os.getenv('DB_USER', 'analyst')}:"
-        f"{os.getenv('DB_PASSWORD', '')}@"
-        f"{os.getenv('DB_HOST', 'localhost')}:"
-        f"{os.getenv('DB_PORT', '5432')}/"
-        f"{os.getenv('DB_NAME', 'bhavcopy_db')}"
+        f"postgresql://{os.getenv('DB_USER', 'analyst').strip()}:"
+        f"{os.getenv('DB_PASSWORD', '').strip()}@"
+        f"{os.getenv('DB_HOST', 'localhost').strip()}:"
+        f"{os.getenv('DB_PORT', '5432').strip()}/"
+        f"{os.getenv('DB_NAME', 'bhavcopy_db').strip()}"
     )
 
 

@@ -69,8 +69,13 @@ def step1_udiff(target_date: date) -> str:
     try:
         result = run_for_date(target_date)
         if result:
-            rows = sum(result.values())
-            return f"OK ({rows} rows across {len(result)} tables)"
+            datasets = result.get("datasets", {})
+            status = result.get("status", "")
+            if status not in ("", None) and not str(status).startswith("OK") and datasets == {}:
+                err = result.get("error", status)
+                return f"FAILED: {err}"
+            rows = sum(datasets.values()) if datasets else 0
+            return f"OK ({rows} rows across {len(datasets)} tables)"
         return "OK (0 rows — date may already be loaded or file unavailable)"
     except Exception as exc:
         return f"FAILED: {exc}"
