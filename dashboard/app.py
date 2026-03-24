@@ -2138,10 +2138,10 @@ def page_causality_analysis(sel_date: date, db_ok: bool, view_period: str = "Dai
         else:
             fig = px.imshow(
                 corr_mat.fillna(0),
-                color_continuous_scale=”RdBu_r”,
+                color_continuous_scale="RdBu_r",
                 zmin=-1, zmax=1,
-                title=”Pearson Correlation Matrix \u2014 Top 30 Stocks”,
-                labels=dict(color=”Correlation”),
+                title="Pearson Correlation Matrix — Top 30 Stocks",
+                labels=dict(color="Correlation"),
             )
             fig.update_layout(
                 height=600,
