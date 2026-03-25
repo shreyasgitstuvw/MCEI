@@ -18,7 +18,7 @@ class TestBreakoutAnalyzer:
     def test_calculate_breakout_strength_returns_dataframe(self, analyzer):
         result = analyzer.calculate_breakout_strength()
         assert isinstance(result, pd.DataFrame)
-        expected_cols = {"symbol", "trade_date", "high_low", "breakout_margin",
+        expected_cols = {"symbol", "trade_date", "hl_type", "breakout_margin",
                          "volume_ratio", "strength"}
         assert expected_cols.issubset(result.columns)
 
