@@ -5,24 +5,31 @@
 
 -- Daily price data (one row per symbol per day)
 CREATE TABLE IF NOT EXISTS fact_daily_prices (
-    id               BIGSERIAL PRIMARY KEY,
-    trade_date       DATE          NOT NULL,
-    symbol           VARCHAR(50),
-    series           VARCHAR(10),
-    security_name    VARCHAR(255)  NOT NULL,
-    market           VARCHAR(10),
-    prev_close       DECIMAL(15,2),
-    open_price       DECIMAL(15,2),
-    high_price       DECIMAL(15,2),
-    low_price        DECIMAL(15,2),
-    close_price      DECIMAL(15,2),
-    net_traded_value DECIMAL(20,2),
-    net_traded_qty   BIGINT,
-    total_trades     INTEGER,
-    high_52_week     DECIMAL(15,2),
-    low_52_week      DECIMAL(15,2),
-    is_index         BOOLEAN DEFAULT FALSE,
-    created_at       TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    id                  BIGSERIAL PRIMARY KEY,
+    trade_date          DATE          NOT NULL,
+    symbol              VARCHAR(50),
+    series              VARCHAR(10),
+    security_name       VARCHAR(255)  NOT NULL,
+    isin                VARCHAR(20),
+    market              VARCHAR(10),
+    prev_close          DECIMAL(15,2),
+    open_price          DECIMAL(15,2),
+    high_price          DECIMAL(15,2),
+    low_price           DECIMAL(15,2),
+    close_price         DECIMAL(15,2),
+    net_traded_value    DECIMAL(20,2),
+    net_traded_qty      BIGINT,
+    total_trades        INTEGER,
+    delivery_qty        BIGINT,
+    delivery_pct        DECIMAL(10,4),
+    high_52_week        DECIMAL(15,2),
+    low_52_week         DECIMAL(15,2),
+    day_change          DECIMAL(15,4),
+    day_change_pct      DECIMAL(10,4),
+    intraday_range      DECIMAL(15,4),
+    intraday_range_pct  DECIMAL(10,4),
+    is_index            BOOLEAN DEFAULT FALSE,
+    created_at          TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT uq_price_symbol_date UNIQUE (symbol, trade_date)
 );
 
@@ -89,6 +96,8 @@ CREATE TABLE IF NOT EXISTS fact_hl_hits (
     series        VARCHAR(10),
     security_name VARCHAR(255),
     hl_type       CHAR(1),             -- 'H' new high / 'L' new low
+    price         DECIMAL(15,2),       -- LTP at the breakout
+    prev_high_low DECIMAL(15,2),       -- previous 52w level crossed
     created_at    TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -227,6 +236,23 @@ CREATE TABLE IF NOT EXISTS precomp_causality (
 CREATE INDEX IF NOT EXISTS idx_daily_prices_date        ON fact_daily_prices (trade_date);
 CREATE INDEX IF NOT EXISTS idx_daily_prices_symbol      ON fact_daily_prices (symbol);
 CREATE INDEX IF NOT EXISTS idx_daily_prices_date_symbol ON fact_daily_prices (trade_date, symbol);
+CREATE INDEX IF NOT EXISTS idx_daily_prices_series      ON fact_daily_prices (trade_date, series, is_index);
+CREATE INDEX IF NOT EXISTS idx_daily_prices_delivery    ON fact_daily_prices (trade_date, series) WHERE delivery_pct IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_hl_type                  ON fact_hl_hits (hl_type);
 CREATE INDEX IF NOT EXISTS idx_precomp_regime_date      ON precomp_regime (computed_date, trade_date);
 CREATE INDEX IF NOT EXISTS idx_precomp_vol_date         ON precomp_volume_patterns (computed_date, pattern_type);
 CREATE INDEX IF NOT EXISTS idx_precomp_caus_date        ON precomp_causality (computed_date);
+
+-- ============================================================
+-- Migration: add columns to existing tables (safe to re-run)
+-- ============================================================
+ALTER TABLE fact_daily_prices ADD COLUMN IF NOT EXISTS isin               VARCHAR(20);
+ALTER TABLE fact_daily_prices ADD COLUMN IF NOT EXISTS delivery_qty       BIGINT;
+ALTER TABLE fact_daily_prices ADD COLUMN IF NOT EXISTS delivery_pct       DECIMAL(10,4);
+ALTER TABLE fact_daily_prices ADD COLUMN IF NOT EXISTS day_change         DECIMAL(15,4);
+ALTER TABLE fact_daily_prices ADD COLUMN IF NOT EXISTS day_change_pct     DECIMAL(10,4);
+ALTER TABLE fact_daily_prices ADD COLUMN IF NOT EXISTS intraday_range     DECIMAL(15,4);
+ALTER TABLE fact_daily_prices ADD COLUMN IF NOT EXISTS intraday_range_pct DECIMAL(10,4);
+
+ALTER TABLE fact_hl_hits ADD COLUMN IF NOT EXISTS price         DECIMAL(15,2);
+ALTER TABLE fact_hl_hits ADD COLUMN IF NOT EXISTS prev_high_low DECIMAL(15,2);

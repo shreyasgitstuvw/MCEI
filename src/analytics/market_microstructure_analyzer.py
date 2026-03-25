@@ -9,6 +9,7 @@ from typing import Dict, List
 import pandas as pd
 import numpy as np
 from datetime import date, timedelta
+from sqlalchemy import text
 
 # Import core liquidity calculator
 from .market_microstructure import (
@@ -32,17 +33,17 @@ class MarketMicrostructureAnalyzer:
             trade_date = self._get_latest_date()
         
         # Fetch data
-        query = f"""
+        query = text("""
         SELECT symbol, series, net_traded_qty, net_traded_value,
                delivery_pct, close_price
         FROM fact_daily_prices
-        WHERE trade_date = '{trade_date}'
+        WHERE trade_date = :trade_date
           AND series = 'EQ'
           AND delivery_pct IS NOT NULL
-        """
-        
+        """)
+
         with self.engine.connect() as conn:
-            df = pd.read_sql(query, conn)
+            df = pd.read_sql(query, conn, params={"trade_date": trade_date})
         
         if df.empty:
             return pd.DataFrame()
@@ -60,16 +61,16 @@ class MarketMicrostructureAnalyzer:
         if trade_date is None:
             trade_date = self._get_latest_date()
         
-        query = f"""
+        query = text("""
         SELECT symbol, series, net_traded_qty, net_traded_value,
                delivery_pct, close_price
         FROM fact_daily_prices
-        WHERE trade_date = '{trade_date}'
+        WHERE trade_date = :trade_date
           AND series = 'EQ'
-        """
-        
+        """)
+
         with self.engine.connect() as conn:
-            df = pd.read_sql(query, conn)
+            df = pd.read_sql(query, conn, params={"trade_date": trade_date})
         
         if df.empty:
             return pd.DataFrame()
@@ -81,17 +82,17 @@ class MarketMicrostructureAnalyzer:
         if trade_date is None:
             trade_date = self._get_latest_date()
         
-        query = f"""
+        query = text("""
         SELECT symbol, open_price, prev_close, close_price
         FROM fact_daily_prices
-        WHERE trade_date = '{trade_date}'
+        WHERE trade_date = :trade_date
           AND series = 'EQ'
           AND open_price IS NOT NULL
           AND prev_close IS NOT NULL
-        """
-        
+        """)
+
         with self.engine.connect() as conn:
-            df = pd.read_sql(query, conn)
+            df = pd.read_sql(query, conn, params={"trade_date": trade_date})
         
         if df.empty:
             return pd.DataFrame()
@@ -103,17 +104,20 @@ class MarketMicrostructureAnalyzer:
         end_date = self._get_latest_date()
         start_date = end_date - timedelta(days=days)
         
-        query = f"""
+        query = text("""
         SELECT trade_date, delivery_pct, net_traded_qty, close_price
         FROM fact_daily_prices
-        WHERE symbol = '{symbol}'
-          AND trade_date BETWEEN '{start_date}' AND '{end_date}'
+        WHERE symbol = :symbol
+          AND trade_date BETWEEN :start_date AND :end_date
           AND delivery_pct IS NOT NULL
         ORDER BY trade_date
-        """
-        
+        """)
+
         with self.engine.connect() as conn:
-            df = pd.read_sql(query, conn)
+            df = pd.read_sql(query, conn,
+                             params={"symbol": symbol,
+                                     "start_date": start_date,
+                                     "end_date": end_date})
         
         return df
     

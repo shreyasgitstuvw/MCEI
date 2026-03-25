@@ -233,6 +233,14 @@ class MarketRegimeClassifier:
         Classify regime using machine learning (K-means clustering)
         Requires scikit-learn: pip install scikit-learn
         """
+        # Prevent OpenMP thread-pool deadlock on Windows.
+        # Must be set before sklearn imports its C extensions.
+        import sys
+        if sys.platform == "win32":
+            import os
+            os.environ.setdefault("OMP_NUM_THREADS", "1")
+            os.environ.setdefault("OPENBLAS_NUM_THREADS", "1")
+
         try:
             from sklearn.cluster import KMeans
             from sklearn.preprocessing import StandardScaler

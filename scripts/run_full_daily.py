@@ -3,10 +3,10 @@ Daily Pipeline Orchestrator
 ============================
 Runs all data ingestion steps for a given trading date:
 
-  Step 1: UDIFF bhavcopy ETL          (always — no session needed)
-  Step 2: Delivery data backfill       (always — no session needed)
-  Step 3: 52-week HL from NSE API      (best-effort — requires live NSE session)
-  Step 4: Corporate actions from NSE   (best-effort — requires live NSE session)
+  Step 1: UDIFF bhavcopy ETL          (always - no session needed)
+  Step 2: Delivery data backfill       (always - no session needed)
+  Step 3: 52-week HL from NSE API      (best-effort - requires live NSE session)
+  Step 4: Corporate actions from NSE   (best-effort - requires live NSE session)
 
 Usage:
     python scripts/run_full_daily.py                   # today
@@ -29,7 +29,7 @@ sys.path.insert(0, str(ROOT / "scripts"))
 import requests
 
 
-# ── helpers ───────────────────────────────────────────────────────────────────
+# -- helpers ------------------------------------------------------------------
 
 def _make_session() -> requests.Session:
     """Prime an NSE session by hitting the homepage first."""
@@ -51,7 +51,7 @@ def _make_session() -> requests.Session:
         session.get(NSE_BASE, timeout=10)
         time.sleep(1)
     except Exception as e:
-        print(f"  ⚠️  NSE session priming failed: {e}")
+        print(f"  WARNING: NSE session priming failed: {e}")
     return session
 
 
@@ -61,7 +61,7 @@ def _parse_date(s: str | None) -> date:
     return datetime.strptime(s, "%Y-%m-%d").date()
 
 
-# ── pipeline steps ────────────────────────────────────────────────────────────
+# -- pipeline steps -----------------------------------------------------------
 
 def step1_udiff(target_date: date) -> str:
     """Run UDIFF bhavcopy ETL for target_date."""
@@ -76,7 +76,7 @@ def step1_udiff(target_date: date) -> str:
                 return f"FAILED: {err}"
             rows = sum(datasets.values()) if datasets else 0
             return f"OK ({rows} rows across {len(datasets)} tables)"
-        return "OK (0 rows — date may already be loaded or file unavailable)"
+        return "OK (0 rows - date may already be loaded or file unavailable)"
     except Exception as exc:
         return f"FAILED: {exc}"
 
@@ -89,7 +89,7 @@ def step2_delivery(target_date: date) -> str:
         loaded, skipped = backfill_delivery([target_date], session)
         return f"OK ({loaded} dates loaded, {skipped} skipped)"
     except TypeError:
-        # backfill_delivery may not return a tuple — handle gracefully
+        # backfill_delivery may not return a tuple - handle gracefully
         try:
             from backfill_supplementary import backfill_delivery as bd
             bd([target_date], session)
@@ -124,7 +124,7 @@ def step4_corp(target_date: date, session: requests.Session) -> str:
         return f"SKIPPED ({exc})"
 
 
-# ── orchestrator ──────────────────────────────────────────────────────────────
+# -- orchestrator -------------------------------------------------------------
 
 def run(target_date: date, skip_live: bool = False,
         delivery_only: bool = False) -> dict[str, str]:
@@ -156,16 +156,16 @@ def run(target_date: date, skip_live: bool = False,
         results["step3_hl"]   = "SKIPPED (--skip-live)"
         results["step4_corp"] = "SKIPPED (--skip-live)"
 
-    print("\n── Summary ──────────────────────────────────────────")
+    print("\n-- Summary ------------------------------------------")
     for k, v in results.items():
-        status_icon = "✅" if v.startswith("OK") else ("⏭️" if v.startswith("SKIPPED") else "❌")
-        print(f"  {status_icon}  {k:<20} {v}")
+        status_icon = "OK  " if v.startswith("OK") else ("SKIP" if v.startswith("SKIPPED") else "FAIL")
+        print(f"  [{status_icon}]  {k:<20} {v}")
     print()
 
     return results
 
 
-# ── CLI ───────────────────────────────────────────────────────────────────────
+# -- CLI ----------------------------------------------------------------------
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="NSE daily pipeline orchestrator")
@@ -177,5 +177,5 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     target = _parse_date(args.date)
-    print(f"NSE Daily Pipeline — {target}")
+    print(f"NSE Daily Pipeline - {target}")
     run(target, skip_live=args.skip_live, delivery_only=args.delivery_only)

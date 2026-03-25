@@ -136,9 +136,9 @@ def _update_delivery(df: pd.DataFrame, trade_date: date, engine) -> int:
     for rec in records:
         for k, v in rec.items():
             if v is not None and not isinstance(v, bool):
-                if isinstance(v, (np.integer,)):
+                if isinstance(v, (np.integer, np.int64, np.int32)):
                     rec[k] = int(v)
-                elif isinstance(v, (np.floating, float)):
+                elif isinstance(v, (np.floating, np.float64, np.float32, float)):
                     if v != v:  # NaN check
                         rec[k] = None
                     elif k == 'delivery_qty':
@@ -161,16 +161,15 @@ def load_circuits(df: pd.DataFrame, trade_date: date) -> int:
 
 def load_corporate_actions(df: pd.DataFrame, trade_date: date) -> int:
     e = get_engine()
-    # no single unique key — replace today's rows
+    # no single unique key — replace today's rows atomically
+    keep = _table_columns(e, "fact_corporate_actions") - {"id", "created_at"}
+    out = df[[col for col in df.columns if col in keep]].copy()
+    records = out.where(pd.notna(out), other=None).to_dict("records")
     with e.begin() as c:
         c.execute(text(
             "DELETE FROM fact_corporate_actions WHERE trade_date=:d"
         ), {"d": trade_date})
-    keep = _table_columns(e, "fact_corporate_actions") - {"id", "created_at"}
-    out = df[[col for col in df.columns if col in keep]].copy()
-    records = out.where(pd.notna(out), other=None).to_dict("records")
-    if records:
-        with e.begin() as c:
+        if records:
             c.execute(text(
                 "INSERT INTO fact_corporate_actions "
                 f"({', '.join(out.columns)}) "
@@ -196,15 +195,14 @@ def load_mcap(df: pd.DataFrame, trade_date: date) -> int:
 
 def load_hl(df: pd.DataFrame, trade_date: date) -> int:
     e = get_engine()
+    keep = _table_columns(e, "fact_hl_hits") - {"id", "created_at"}
+    out = df[[col for col in df.columns if col in keep]].copy()
+    records = out.where(pd.notna(out), other=None).to_dict("records")
     with e.begin() as c:
         c.execute(text(
             "DELETE FROM fact_hl_hits WHERE trade_date=:d"
         ), {"d": trade_date})
-    keep = _table_columns(e, "fact_hl_hits") - {"id", "created_at"}
-    out = df[[col for col in df.columns if col in keep]].copy()
-    records = out.where(pd.notna(out), other=None).to_dict("records")
-    if records:
-        with e.begin() as c:
+        if records:
             c.execute(text(
                 f"INSERT INTO fact_hl_hits ({', '.join(out.columns)}) "
                 f"VALUES ({', '.join(':' + col for col in out.columns)})"
@@ -215,15 +213,14 @@ def load_hl(df: pd.DataFrame, trade_date: date) -> int:
 
 def load_top_traded(df: pd.DataFrame, trade_date: date) -> int:
     e = get_engine()
+    keep = _table_columns(e, "fact_top_traded") - {"id", "created_at"}
+    out = df[[col for col in df.columns if col in keep]].copy()
+    records = out.where(pd.notna(out), other=None).to_dict("records")
     with e.begin() as c:
         c.execute(text(
             "DELETE FROM fact_top_traded WHERE trade_date=:d"
         ), {"d": trade_date})
-    keep = _table_columns(e, "fact_top_traded") - {"id", "created_at"}
-    out = df[[col for col in df.columns if col in keep]].copy()
-    records = out.where(pd.notna(out), other=None).to_dict("records")
-    if records:
-        with e.begin() as c:
+        if records:
             c.execute(text(
                 f"INSERT INTO fact_top_traded ({', '.join(out.columns)}) "
                 f"VALUES ({', '.join(':' + col for col in out.columns)})"

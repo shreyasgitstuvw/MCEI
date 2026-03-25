@@ -126,15 +126,21 @@ def transform_udiff_bhavcopy(csv_path: Path, trade_date: date) -> Dict[str, pd.D
         )
         
         equity_df["is_index"] = False
-        
+
         # Select final columns for DB
         keep_cols = [
             "trade_date", "symbol", "series", "security_name", "isin",
             "prev_close", "open_price", "high_price", "low_price", "close_price",
             "net_traded_value", "net_traded_qty", "total_trades",
+            "day_change", "day_change_pct", "intraday_range", "intraday_range_pct",
             "is_index", "is_valid"
         ]
         results["price"] = equity_df[[c for c in keep_cols if c in equity_df.columns]]
+
+        # ── 2b. Circuit hits (heuristic: price frozen at high == low) ─────────
+        circuit_df = transform_circuit_hits_from_udiff(equity_df)
+        if not circuit_df.empty:
+            results["circuits"] = circuit_df
     
     # ── 3. Extract ETFs ───────────────────────────────────────────────────────
     etf_mask = (df["instrument_type"] == "ETF") | (
@@ -187,6 +193,46 @@ def transform_udiff_bhavcopy(csv_path: Path, trade_date: date) -> Dict[str, pd.D
 # ══════════════════════════════════════════════════════════════════════════════
 # Discovery helper
 # ══════════════════════════════════════════════════════════════════════════════
+
+def transform_circuit_hits_from_udiff(equity_df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Detect circuit breaker hits from UDIFF equity data.
+
+    Heuristic: a stock is at circuit when high_price == low_price (price
+    completely frozen at the circuit limit for the entire session) and it
+    traded at least some volume (so it is a circuit freeze, not a trading halt).
+
+    Returns:
+        DataFrame ready for fact_circuit_hits table (may be empty).
+    """
+    if equity_df.empty:
+        return pd.DataFrame()
+
+    df = equity_df.copy()
+
+    # Circuit hit: price froze (high == low) with non-zero volume
+    circuit_mask = (
+        df["high_price"].notna()
+        & df["low_price"].notna()
+        & df["prev_close"].notna()
+        & (df["high_price"] == df["low_price"])
+        & (df["net_traded_qty"].fillna(0) > 0)
+    )
+    circuit_df = df[circuit_mask].copy()
+
+    if circuit_df.empty:
+        return pd.DataFrame()
+
+    # Upper circuit: frozen above prev close; lower: frozen below
+    circuit_df["circuit_type"] = np.where(
+        circuit_df["close_price"] >= circuit_df["prev_close"],
+        "H",
+        "L",
+    )
+
+    keep = ["trade_date", "symbol", "series", "security_name", "circuit_type"]
+    return circuit_df[[c for c in keep if c in circuit_df.columns]].copy()
+
 
 def find_udiff_file(directory: Path, trade_date: date) -> Path | None:
     """

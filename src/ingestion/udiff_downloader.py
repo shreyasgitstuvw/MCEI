@@ -14,6 +14,11 @@ from datetime import datetime, date
 from pathlib import Path
 from urllib.parse import quote
 
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
+from src.utils.logger import get_logger
+
+log = get_logger("udiff_downloader")
+
 RAW_DIR = Path(os.getenv("RAW_DATA_PATH", "data/raw"))
 
 NSE_BASE = "https://www.nseindia.com"
@@ -46,14 +51,14 @@ class UDIFFDownloader:
         if self._primed:
             return
         try:
-            print("  🔐 Priming session (getting cookies) …")
+            log.info("Priming NSE session (getting cookies) ...")
             self.session.get(NSE_BASE, timeout=15)
             time.sleep(2)
             self.session.get(NSE_BASE + "/all-reports", timeout=15)
             time.sleep(1.5)
             self._primed = True
         except Exception as exc:
-            print(f"  ⚠️  Warning: {exc}")
+            log.warning(f"Session priming warning: {exc}")
 
     def _build_url(self, d):
         """Build NSE API URL with proper parameters."""
@@ -87,18 +92,18 @@ class UDIFFDownloader:
         zip_path = dest_dir / f"udiff_{date_str}.zip"
 
         if zip_path.exists() and zip_path.stat().st_size > 10000:
-            print(f"  ✅ Already downloaded: {zip_path.name}")
+            log.info(f"Already downloaded: {zip_path.name}")
             return zip_path
 
-        print(f"\n📅 Downloading for {trade_date.strftime('%d-%b-%Y')}")
+        log.info(f"Downloading UDIFF bhavcopy for {trade_date.strftime('%d-%b-%Y')}")
         self._prime()
 
         url = self._build_url(trade_date)
-        print(f"  🌐 API: {NSE_API}")
-        print(f"  📆 Date: {trade_date.strftime('%d-%b-%Y')}")
+        log.debug(f"API: {NSE_API}")
+        log.info(f"Date: {trade_date.strftime('%d-%b-%Y')}")
 
         try:
-            print(f"  ⬇️  Requesting …")
+            log.info("Requesting ...")
             resp = self.session.get(url, timeout=60, allow_redirects=True)
 
             if resp.status_code != 200:
@@ -118,7 +123,7 @@ class UDIFFDownloader:
 
             zip_path.write_bytes(resp.content)
             size_mb = zip_path.stat().st_size / (1024 * 1024)
-            print(f"  ✅ Downloaded: {zip_path.name} ({size_mb:.2f} MB)")
+            log.info(f"Downloaded: {zip_path.name} ({size_mb:.2f} MB)")
 
             return zip_path
 
@@ -130,7 +135,7 @@ class UDIFFDownloader:
         import zipfile
 
         dest = zip_path.parent
-        print(f"  📦 Extracting …")
+        log.info("Extracting ZIP ...")
 
         with zipfile.ZipFile(zip_path) as zf:
             for member in zf.namelist():
@@ -138,7 +143,7 @@ class UDIFFDownloader:
                 if not name or not name.endswith(".csv"):
                     continue
                 (dest / name).write_bytes(zf.open(member).read())
-                print(f"  ✅ Extracted: {name}")
+                log.info(f"Extracted: {name}")
 
         return dest
 
@@ -156,13 +161,13 @@ if __name__ == "__main__":
     else:
         d = date.today()
 
-    print(f"\n{'=' * 60}")
-    print(f"  NSE UDIFF Bhavcopy Downloader")
-    print(f"{'=' * 60}")
+    log.info("=" * 60)
+    log.info("  NSE UDIFF Bhavcopy Downloader")
+    log.info("=" * 60)
 
     try:
         csv_dir = dl.download_and_extract(d)
-        print(f"\n✅ Complete! Files in: {csv_dir}")
+        log.info(f"Complete! Files in: {csv_dir}")
     except FileNotFoundError as e:
-        print(f"\n❌ Failed: {e}")
+        log.error(f"Failed: {e}")
         sys.exit(1)

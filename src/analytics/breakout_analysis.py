@@ -49,7 +49,7 @@ class BreakoutAnalyzer:
         
         # Calculate how far above 52-week high (or below 52-week low)
         df['breakout_margin'] = np.where(
-            df['high_low'] == 'H',
+            df['hl_type'] == 'H',
             ((df['close_price'] - df['high_52_week']) / df['high_52_week']) * 100,
             ((df['low_52_week'] - df['close_price']) / df['low_52_week']) * 100
         )
@@ -66,7 +66,7 @@ class BreakoutAnalyzer:
             labels=['Weak', 'Moderate', 'Strong', 'Very Strong']
         )
         
-        return df[['symbol', 'trade_date', 'high_low', 'breakout_margin',
+        return df[['symbol', 'trade_date', 'hl_type', 'breakout_margin',
                   'volume_ratio', 'strength']]
     
     def analyze_breakout_success_rate(self, 
@@ -83,7 +83,7 @@ class BreakoutAnalyzer:
         for idx, row in df.iterrows():
             symbol = row['symbol']
             breakout_date = row['trade_date']
-            breakout_type = row['high_low']  # 'H' or 'L'
+            breakout_type = row['hl_type']  # 'H' or 'L'
             breakout_price = row['close_price']
             
             # Get future prices
@@ -212,7 +212,7 @@ class BreakoutAnalyzer:
             results.append({
                 'symbol': symbol,
                 'breakout_date': breakout_date,
-                'breakout_type': row['high_low'],
+                'breakout_type': row['hl_type'],
                 'consolidation_days': len(pre_breakout),
                 'consolidation_tightness_pct': consolidation_tightness,
                 'volume_trend': 'Increasing' if volume_trend > 0 else 'Decreasing',
@@ -234,7 +234,7 @@ class BreakoutAnalyzer:
         df = self.breakout_data.copy()
         
         # Count breakouts by date and type
-        breakout_counts = df.groupby(['trade_date', 'high_low']).size().reset_index(name='count')
+        breakout_counts = df.groupby(['trade_date', 'hl_type']).size().reset_index(name='count')
         
         # Identify high-count days
         breakout_counts['is_cluster'] = breakout_counts['count'] > breakout_counts['count'].quantile(0.75)
@@ -244,12 +244,12 @@ class BreakoutAnalyzer:
         for idx, row in breakout_counts[breakout_counts['is_cluster']].iterrows():
             symbols = df[
                 (df['trade_date'] == row['trade_date']) &
-                (df['high_low'] == row['high_low'])
+                (df['hl_type'] == row['hl_type'])
             ]['symbol'].tolist()
-            
+
             clusters.append({
                 'date': row['trade_date'],
-                'type': '52W High' if row['high_low'] == 'H' else '52W Low',
+                'type': '52W High' if row['hl_type'] == 'H' else '52W Low',
                 'count': row['count'],
                 'symbols': ', '.join(symbols[:10])  # First 10 symbols
             })
@@ -265,8 +265,8 @@ class BreakoutAnalyzer:
         - Consolidation quality
         """
         strength = self.calculate_breakout_strength()
-        # rename trade_date → breakout_date and high_low → breakout_type to match consolidation
-        strength = strength.rename(columns={'trade_date': 'breakout_date', 'high_low': 'breakout_type'})
+        # rename trade_date → breakout_date and hl_type → breakout_type to match consolidation
+        strength = strength.rename(columns={'trade_date': 'breakout_date', 'hl_type': 'breakout_type'})
         consolidation = self.analyze_consolidation_before_breakout()
         # consolidation also carries breakout_type; drop it before merge to avoid _x/_y conflict
         consolidation = consolidation.drop(columns=['breakout_type'], errors='ignore')
