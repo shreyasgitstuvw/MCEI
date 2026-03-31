@@ -21,8 +21,9 @@ log = get_logger("udiff_downloader")
 
 RAW_DIR = Path(os.getenv("RAW_DATA_PATH", "data/raw"))
 
-NSE_BASE = "https://www.nseindia.com"
-NSE_API = "https://www.nseindia.com/api/reports"
+NSE_BASE     = "https://www.nseindia.com"
+NSE_API      = "https://www.nseindia.com/api/reports"
+NSE_ARCHIVES = "https://nsearchives.nseindia.com"
 
 HEADERS = {
     "User-Agent": (
@@ -60,8 +61,8 @@ class UDIFFDownloader:
         except Exception as exc:
             log.warning(f"Session priming warning: {exc}")
 
-    def _build_url(self, d):
-        """Build NSE API URL with proper parameters."""
+    def _build_api_url(self, d):
+        """Build NSE live API URL (requires session cookies)."""
         archives = [{
             "name": "CM-UDiFF Common Bhavcopy Final (zip)",
             "type": "daily-reports",
@@ -81,6 +82,38 @@ class UDIFFDownloader:
         )
         return url
 
+    def _build_archive_url(self, d):
+        """Build direct nsearchives URL — no session cookies required."""
+        date_str = d.strftime("%Y%m%d")
+        return (
+            f"{NSE_ARCHIVES}/content/cm/"
+            f"BhavCopy_NSE_CM_0_0_0_{date_str}_F_0000.zip"
+        )
+
+    def _try_archive_download(self, trade_date, zip_path):
+        """Try downloading via public nsearchives URL (no cookies)."""
+        url = self._build_archive_url(trade_date)
+        log.info(f"Trying archive URL: {url}")
+        try:
+            resp = self.session.get(url, timeout=60, allow_redirects=True)
+            if resp.status_code == 200 and len(resp.content) > 10000:
+                content_type = resp.headers.get("Content-Type", "")
+                snippet = resp.content[:4]
+                # ZIP magic bytes: PK (0x50 0x4B)
+                if snippet[:2] == b"PK":
+                    zip_path.write_bytes(resp.content)
+                    size_mb = zip_path.stat().st_size / (1024 * 1024)
+                    log.info(f"Archive download OK: {zip_path.name} ({size_mb:.2f} MB)")
+                    return zip_path
+                if b"<html" in resp.content[:200].lower():
+                    log.debug("Archive URL returned HTML (not yet published or wrong date)")
+                    return None
+            log.debug(f"Archive URL returned status {resp.status_code} / size {len(resp.content)}")
+            return None
+        except Exception as exc:
+            log.debug(f"Archive download attempt failed: {exc}")
+            return None
+
     def download(self, trade_date=None):
         """Download UDIFF bhavcopy ZIP."""
         if trade_date is None:
@@ -96,9 +129,17 @@ class UDIFFDownloader:
             return zip_path
 
         log.info(f"Downloading UDIFF bhavcopy for {trade_date.strftime('%d-%b-%Y')}")
+
+        # ── Attempt 1: public nsearchives URL (no session cookies, works from CI) ──
+        result = self._try_archive_download(trade_date, zip_path)
+        if result:
+            return result
+
+        # ── Attempt 2: live NSE API (requires session cookies, may be blocked in CI) ──
+        log.info("Archive URL failed — falling back to live NSE API ...")
         self._prime()
 
-        url = self._build_url(trade_date)
+        url = self._build_api_url(trade_date)
         log.debug(f"API: {NSE_API}")
         log.info(f"Date: {trade_date.strftime('%d-%b-%Y')}")
 

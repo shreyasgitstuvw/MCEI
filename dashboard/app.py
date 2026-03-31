@@ -390,7 +390,7 @@ def page_market_summary(sel_date: date, db_ok: bool, view_period: str = "Daily")
                        .apply(lambda g: pd.Series({
                            "advances": int((g["close_price"] > g["prev_close"]).sum()),
                            "declines": int((g["close_price"] < g["prev_close"]).sum()),
-                       }))
+                       }), include_groups=False)
                        .reset_index())
         if not breadth.empty:
             if view_period != "Daily":
@@ -1458,7 +1458,7 @@ def _compute_regime_data(_pr_range: pd.DataFrame) -> dict:
             "open_price":  float(np.average(g["open_price"].fillna(0), weights=w)),
         })
 
-    nifty_proxy = top_eq.groupby("trade_date").apply(_wt_avg).reset_index()
+    nifty_proxy = top_eq.groupby("trade_date").apply(_wt_avg, include_groups=False).reset_index()
     nifty_proxy["security_name"] = "Nifty 50"
 
     try:

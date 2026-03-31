@@ -316,7 +316,7 @@ class CorporateActionEventStudy:
         
         # Calculate success rate (positive CAR)
         success_rate = final_impact.groupby('action_type').apply(
-            lambda x: (x['car'] > 0).mean() * 100
+            lambda x: (x['car'] > 0).mean() * 100, include_groups=False
         ).reset_index(name='success_rate')
         
         effectiveness = pd.merge(effectiveness, success_rate, on='action_type')

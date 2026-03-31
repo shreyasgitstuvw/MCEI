@@ -1,0 +1,84 @@
+name: Backfill Historical Data
+
+on:
+  workflow_dispatch:
+    inputs:
+      start_date:
+        description: "Start date (YYYY-MM-DD)"
+        required: true
+        type: string
+      end_date:
+        description: "End date (YYYY-MM-DD, defaults to today)"
+        required: false
+        type: string
+        default: ""
+      steps:
+        description: "Steps to run"
+        required: false
+        type: choice
+        default: "all"
+        options:
+          - all
+          - prices-only
+          - supplementary-only
+          - precompute-only
+
+jobs:
+  backfill:
+    runs-on: ubuntu-latest
+
+    env:
+      DB_HOST:     ${{ secrets.DB_HOST }}
+      DB_PORT:     ${{ secrets.DB_PORT }}
+      DB_NAME:     ${{ secrets.DB_NAME }}
+      DB_USER:     ${{ secrets.DB_USER }}
+      DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Cache pip
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('requirements.txt') }}
+          restore-keys: ${{ runner.os }}-pip-
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Resolve end date
+        id: dates
+        run: |
+          END="${{ inputs.end_date }}"
+          if [ -z "$END" ]; then END=$(date +%Y-%m-%d); fi
+          echo "end_date=$END" >> $GITHUB_OUTPUT
+          echo "Backfill range: ${{ inputs.start_date }} → $END"
+
+      - name: Backfill UDIFF prices
+        if: ${{ inputs.steps == 'all' || inputs.steps == 'prices-only' }}
+        run: |
+          python -m src.etl.pipeline backfill ${{ inputs.start_date }} ${{ steps.dates.outputs.end_date }}
+
+      - name: Backfill delivery + MCAP
+        if: ${{ inputs.steps == 'all' || inputs.steps == 'supplementary-only' }}
+        run: |
+          python scripts/backfill_supplementary.py --delivery --mcap
+
+      - name: Derive 52-week H/L and populate hl_hits
+        if: ${{ inputs.steps == 'all' || inputs.steps == 'precompute-only' }}
+        run: |
+          python scripts/derive_52week_hl.py
+
+      - name: Pre-compute analytics
+        if: ${{ inputs.steps == 'all' || inputs.steps == 'precompute-only' }}
+        run: |
+          python scripts/precompute_analytics.py

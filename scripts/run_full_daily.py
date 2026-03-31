@@ -100,6 +100,17 @@ def step2_delivery(target_date: date) -> str:
         return f"FAILED: {exc}"
 
 
+def step2b_mcap(target_date: date) -> str:
+    """Download and load market cap data for target_date (nsearchives — no session needed)."""
+    from backfill_supplementary import backfill_mcap, _make_session as _bs_make_session
+    session = _bs_make_session()   # no priming needed for archives
+    try:
+        backfill_mcap([target_date], session)
+        return "OK"
+    except Exception as exc:
+        return f"FAILED: {exc}"
+
+
 def step3_hl(target_date: date, session: requests.Session) -> str:
     """Fetch 52-week HL data for target_date from live NSE API."""
     from backfill_supplementary import backfill_hl
@@ -141,6 +152,11 @@ def run(target_date: date, skip_live: bool = False,
     results["step2_delivery"] = step2_delivery(target_date)
     print(f"         {results['step2_delivery']}  ({time.time()-t0:.1f}s)")
 
+    print(f"\n[Step 2b] Market cap data for {target_date} ...")
+    t0 = time.time()
+    results["step2b_mcap"] = step2b_mcap(target_date)
+    print(f"          {results['step2b_mcap']}  ({time.time()-t0:.1f}s)")
+
     if not skip_live and not delivery_only:
         print(f"\n[Step 3] 52-week HL data for {target_date} ...")
         session = _make_session()
@@ -174,8 +190,18 @@ if __name__ == "__main__":
                         help="Skip Steps 3+4 (no NSE live API session required)")
     parser.add_argument("--delivery-only", action="store_true",
                         help="Run Step 2 only (delivery data update)")
+    parser.add_argument("--allow-no-data", action="store_true",
+                        help="Exit 0 even if UDIFF download fails (use on known holidays)")
     args = parser.parse_args()
 
     target = _parse_date(args.date)
     print(f"NSE Daily Pipeline - {target}")
-    run(target, skip_live=args.skip_live, delivery_only=args.delivery_only)
+    results = run(target, skip_live=args.skip_live, delivery_only=args.delivery_only)
+
+    # Exit non-zero if UDIFF step failed — lets GitHub Actions mark the run as failed.
+    # Use --allow-no-data on NSE holidays to suppress this.
+    if not args.delivery_only:
+        step1 = results.get("step1_udiff", "")
+        if step1.startswith("FAILED") and not args.allow_no_data:
+            print(f"\nERROR: UDIFF step failed: {step1}", flush=True)
+            sys.exit(1)

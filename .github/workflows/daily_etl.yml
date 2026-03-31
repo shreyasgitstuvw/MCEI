@@ -38,7 +38,7 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Run daily pipeline (UDIFF + delivery, skip live NSE API)
+      - name: Run daily pipeline (UDIFF + delivery + MCAP, skip live NSE API)
         run: |
           python scripts/run_full_daily.py --skip-live
 
@@ -77,6 +77,10 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
+
+      - name: Derive 52-week H/L and populate hl_hits
+        run: |
+          python scripts/derive_52week_hl.py
 
       - name: Pre-compute analytics into DB
         run: |

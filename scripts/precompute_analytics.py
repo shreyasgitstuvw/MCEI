@@ -123,7 +123,7 @@ def precompute_regime(engine, pr: pd.DataFrame, computed_date: date) -> int:
                           "net_traded_value": g["net_traded_value"].sum(),
                           "net_traded_qty":   int(g["net_traded_qty"].sum()),
                           "total_trades":     int(g["total_trades"].sum()),
-                      }))
+                      }), include_groups=False)
                       .reset_index())
         proxy["symbol"]        = "NIFTY50_PROXY"
         proxy["security_name"] = "Nifty 50"
