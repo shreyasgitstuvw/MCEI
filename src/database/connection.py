@@ -26,12 +26,14 @@ def get_database_url() -> str:
     except Exception:
         pass  # not running inside Streamlit — use env vars
 
+    sslmode = os.getenv('DB_SSLMODE', 'prefer').strip()
     return (
         f"postgresql://{os.getenv('DB_USER', 'analyst').strip()}:"
         f"{os.getenv('DB_PASSWORD', '').strip()}@"
         f"{os.getenv('DB_HOST', 'localhost').strip()}:"
         f"{os.getenv('DB_PORT', '5432').strip()}/"
         f"{os.getenv('DB_NAME', 'bhavcopy_db').strip()}"
+        f"?sslmode={sslmode}"
     )
 
 
