@@ -71,6 +71,9 @@ def step1_udiff(target_date: date) -> str:
         if result:
             datasets = result.get("datasets", {})
             status = result.get("status", "")
+            # NO_DATA means NSE didn't publish a file (holiday / pre-publish) — not a pipeline failure
+            if status == "NO_DATA":
+                return f"NO_DATA (file not published for {target_date} — holiday or not yet available)"
             if status not in ("", None) and not str(status).startswith("OK") and datasets == {}:
                 err = result.get("error", status)
                 return f"FAILED: {err}"
@@ -174,7 +177,7 @@ def run(target_date: date, skip_live: bool = False,
 
     print("\n-- Summary ------------------------------------------")
     for k, v in results.items():
-        status_icon = "OK  " if v.startswith("OK") else ("SKIP" if v.startswith("SKIPPED") else "FAIL")
+        status_icon = "OK  " if v.startswith("OK") else ("SKIP" if v.startswith(("SKIPPED", "NO_DATA")) else "FAIL")
         print(f"  [{status_icon}]  {k:<20} {v}")
     print()
 
@@ -198,10 +201,13 @@ if __name__ == "__main__":
     print(f"NSE Daily Pipeline - {target}")
     results = run(target, skip_live=args.skip_live, delivery_only=args.delivery_only)
 
-    # Exit non-zero if UDIFF step failed — lets GitHub Actions mark the run as failed.
-    # Use --allow-no-data on NSE holidays to suppress this.
+    # Exit non-zero only on real pipeline failures (transform/load/download errors).
+    # NO_DATA (holiday or file not yet published) exits 0 — not a pipeline fault.
+    # Use --allow-no-data to also suppress FAILED exits (e.g. known maintenance windows).
     if not args.delivery_only:
         step1 = results.get("step1_udiff", "")
-        if step1.startswith("FAILED") and not args.allow_no_data:
+        if step1.startswith("NO_DATA"):
+            print(f"\nINFO: No bhavcopy published for {target} — NSE holiday or file not yet available. Exiting 0.", flush=True)
+        elif step1.startswith("FAILED") and not args.allow_no_data:
             print(f"\nERROR: UDIFF step failed: {step1}", flush=True)
             sys.exit(1)

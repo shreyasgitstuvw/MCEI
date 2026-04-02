@@ -58,18 +58,13 @@ WHERE fp.ctid = r.ctid
 #   L hit: close_price = low_52_week   (today's close IS the rolling 252-day min)
 # Skip dates already present to make this idempotent.
 HITS_SQL = """
-INSERT INTO fact_hl_hits (trade_date, symbol, series, security_name, hl_type, price, prev_high_low)
+INSERT INTO fact_hl_hits (trade_date, symbol, series, security_name, hl_type)
 SELECT
     fp.trade_date,
     fp.symbol,
     fp.series,
     fp.security_name,
-    hit.hl_type,
-    fp.close_price                              AS price,
-    CASE hit.hl_type
-        WHEN 'H' THEN fp.high_52_week
-        ELSE           fp.low_52_week
-    END                                         AS prev_high_low
+    hit.hl_type
 FROM fact_daily_prices fp
 CROSS JOIN (VALUES ('H'), ('L')) AS hit(hl_type)
 WHERE fp.high_52_week IS NOT NULL
