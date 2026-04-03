@@ -30,6 +30,7 @@ import requests
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from src.database.connection import get_engine
+from src.database import connection as _db_conn
 from src.database.loader import load_hl, load_mcap, load_corporate_actions
 from src.etl.multi_transformer import (
     transform_full_bhavcopy,
@@ -54,6 +55,24 @@ HEADERS = {
 }
 
 RAW_DIR = Path("data/raw")
+
+
+def _reconnect(retries: int = 5, delay: int = 15):
+    """Dispose the global engine and reconnect — used after Neon drops a connection."""
+    for attempt in range(1, retries + 1):
+        try:
+            if _db_conn._engine is not None:
+                _db_conn._engine.dispose()
+                _db_conn._engine = None
+            eng = get_engine()
+            with eng.connect() as c:
+                c.execute(text("SELECT 1"))
+            return eng
+        except Exception as e:
+            print(f"\n  Reconnect attempt {attempt}/{retries} failed: {e}")
+            if attempt == retries:
+                raise
+            time.sleep(delay)
 
 
 # ── helpers ───────────────────────────────────────────────────────────────────
@@ -120,12 +139,21 @@ def backfill_delivery(dates: list[date], session: requests.Session):
 
         print(f"\n  {d}  ", end="", flush=True)
 
-        # Check if already loaded
-        with engine.connect() as c:
-            already = c.execute(text(
-                "SELECT COUNT(*) FROM fact_daily_prices "
-                "WHERE trade_date=:d AND delivery_pct IS NOT NULL"
-            ), {"d": d}).scalar()
+        # Check if already loaded — direct psycopg2 with 30s timeout to avoid pool hangs
+        import os, psycopg2 as _pg
+        _chk = _pg.connect(
+            host=os.getenv("DB_HOST", "").strip(), port=int(os.getenv("DB_PORT", "5432")),
+            dbname=os.getenv("DB_NAME", "").strip(), user=os.getenv("DB_USER", "").strip(),
+            password=os.getenv("DB_PASSWORD", "").strip(),
+            sslmode=os.getenv("DB_SSLMODE", "require").strip(), connect_timeout=30,
+        )
+        with _chk.cursor() as _cur:
+            _cur.execute(
+                "SELECT COUNT(*) FROM fact_daily_prices WHERE trade_date=%s AND delivery_pct IS NOT NULL",
+                (d,)
+            )
+            already = _cur.fetchone()[0]
+        _chk.close()
         if already > 100:
             print(f"already loaded ({already} rows with delivery)")
             skip += 1
@@ -146,28 +174,57 @@ def backfill_delivery(dates: list[date], session: requests.Session):
                 fail += 1
                 continue
 
-            upd = df[["symbol", "trade_date"] + delivery_cols].dropna(subset=["delivery_pct"])
-            import numpy as np
-            records = upd.where(pd.notna(upd), other=None).to_dict("records")
-            for rec in records:
-                for k, v in rec.items():
-                    if v is not None and not isinstance(v, bool):
-                        if isinstance(v, (np.integer,)):
-                            rec[k] = int(v)
-                        elif isinstance(v, (np.floating, float)):
-                            rec[k] = None if v != v else (int(v) if k == "delivery_qty" else float(v))
+            upd = df[["symbol", "trade_date"] + delivery_cols].dropna(subset=["delivery_pct"]).copy()
+            if "delivery_qty" in upd.columns:
+                upd["delivery_qty"] = pd.to_numeric(upd["delivery_qty"], errors="coerce").round().astype("Int64")
 
-            set_clause = ", ".join(f"{c}=:{c}" for c in delivery_cols)
-            sql = text(
-                f"UPDATE fact_daily_prices SET {set_clause} "
-                "WHERE symbol=:symbol AND trade_date=:trade_date"
+            # Bulk update via COPY → temp table → single UPDATE FROM
+            # Avoids ~3000 serial round-trips; completes in ~1s instead of ~5min.
+            import io, os, psycopg2
+            buf = io.StringIO()
+            upd.to_csv(buf, index=False, header=False, na_rep="\\N")
+            buf.seek(0)
+            col_list = "symbol, trade_date, " + ", ".join(delivery_cols)
+            set_clause = ", ".join(f"{c}=t.{c}" for c in delivery_cols)
+            col_defs = ", ".join(
+                "delivery_qty BIGINT" if c == "delivery_qty" else "delivery_pct NUMERIC(6,2)"
+                for c in delivery_cols
             )
-            with engine.begin() as c:
-                c.execute(sql, records)
-            print(f"updated {len(records)} rows with delivery data  ({f.stat().st_size//1024} KB)")
+            # Direct psycopg2 connection with explicit timeout — avoids pool hangs
+            pg_conn = psycopg2.connect(
+                host=os.getenv("DB_HOST", "").strip(),
+                port=int(os.getenv("DB_PORT", "5432")),
+                dbname=os.getenv("DB_NAME", "").strip(),
+                user=os.getenv("DB_USER", "").strip(),
+                password=os.getenv("DB_PASSWORD", "").strip(),
+                sslmode=os.getenv("DB_SSLMODE", "require").strip(),
+                connect_timeout=30,
+            )
+            try:
+                with pg_conn.cursor() as cur:
+                    cur.execute(
+                        f"CREATE TEMP TABLE _delivery_tmp "
+                        f"(symbol TEXT, trade_date DATE, {col_defs}) ON COMMIT DROP"
+                    )
+                    cur.copy_expert(
+                        f"COPY _delivery_tmp ({col_list}) FROM STDIN WITH CSV NULL '\\N'",
+                        buf,
+                    )
+                    cur.execute(
+                        f"UPDATE fact_daily_prices SET {set_clause} "
+                        "FROM _delivery_tmp t "
+                        "WHERE fact_daily_prices.symbol = t.symbol "
+                        "  AND fact_daily_prices.trade_date = t.trade_date"
+                    )
+                pg_conn.commit()
+                n = len(upd)
+            finally:
+                pg_conn.close()
+            print(f"updated {n} rows with delivery data  ({f.stat().st_size//1024} KB)")
             ok += 1
         except Exception as e:
             print(f"transform/load error: {e}")
+            engine = _reconnect()
             fail += 1
 
     print(f"\n  Done: {ok} loaded, {skip} skipped, {fail} failed")

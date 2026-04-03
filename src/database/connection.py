@@ -33,7 +33,7 @@ def get_database_url() -> str:
         f"{os.getenv('DB_HOST', 'localhost').strip()}:"
         f"{os.getenv('DB_PORT', '5432').strip()}/"
         f"{os.getenv('DB_NAME', 'bhavcopy_db').strip()}"
-        f"?sslmode={sslmode}"
+        f"?sslmode={sslmode}&connect_timeout=30"
     )
 
 
