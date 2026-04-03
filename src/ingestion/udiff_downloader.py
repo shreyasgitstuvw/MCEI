@@ -90,14 +90,26 @@ class UDIFFDownloader:
             f"BhavCopy_NSE_CM_0_0_0_{date_str}_F_0000.zip"
         )
 
+    # Sentinel returned when archive gives a clean 404 — signals download() to
+    # skip the live-API fallback (file simply not published yet, API will 404 too).
+    _ARCHIVE_404 = object()
+
     def _try_archive_download(self, trade_date, zip_path):
-        """Try downloading via public nsearchives URL (no cookies)."""
+        """Try downloading via public nsearchives URL (no cookies).
+
+        Returns:
+            Path  — success, zip written
+            _ARCHIVE_404 — server returned 404 (file not published); skip live API
+            None  — network/other error; live API may still work
+        """
         url = self._build_archive_url(trade_date)
         log.info(f"Trying archive URL: {url}")
         try:
-            resp = self.session.get(url, timeout=60, allow_redirects=True)
+            resp = self.session.get(url, timeout=(10, 60), allow_redirects=True)
+            if resp.status_code == 404:
+                log.debug("Archive URL returned 404 — file not yet published, skipping live API")
+                return self._ARCHIVE_404
             if resp.status_code == 200 and len(resp.content) > 10000:
-                content_type = resp.headers.get("Content-Type", "")
                 snippet = resp.content[:4]
                 # ZIP magic bytes: PK (0x50 0x4B)
                 if snippet[:2] == b"PK":
@@ -107,7 +119,7 @@ class UDIFFDownloader:
                     return zip_path
                 if b"<html" in resp.content[:200].lower():
                     log.debug("Archive URL returned HTML (not yet published or wrong date)")
-                    return None
+                    return self._ARCHIVE_404
             log.debug(f"Archive URL returned status {resp.status_code} / size {len(resp.content)}")
             return None
         except Exception as exc:
@@ -132,6 +144,12 @@ class UDIFFDownloader:
 
         # ── Attempt 1: public nsearchives URL (no session cookies, works from CI) ──
         result = self._try_archive_download(trade_date, zip_path)
+        if result is self._ARCHIVE_404:
+            # Clean 404 from archive means file not published; live API will also 404.
+            # Skip the fallback entirely to avoid hanging for minutes on a doomed request.
+            raise FileNotFoundError(
+                f"No bhavcopy published for {trade_date} (archive returned 404)"
+            )
         if result:
             return result
 
@@ -145,7 +163,9 @@ class UDIFFDownloader:
 
         try:
             log.info("Requesting ...")
-            resp = self.session.get(url, timeout=60, allow_redirects=True)
+            # Use (connect_timeout, read_timeout) tuple — prevents indefinite hangs
+            # when the server accepts the TCP connection but stalls sending a response.
+            resp = self.session.get(url, timeout=(10, 45), allow_redirects=True)
 
             if resp.status_code != 200:
                 raise FileNotFoundError(f"NSE returned status {resp.status_code}")
