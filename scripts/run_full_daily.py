@@ -89,16 +89,8 @@ def step2_delivery(target_date: date) -> str:
     from backfill_supplementary import backfill_delivery, _make_session as _bs_make_session
     session = _bs_make_session()
     try:
-        loaded, skipped = backfill_delivery([target_date], session)
-        return f"OK ({loaded} dates loaded, {skipped} skipped)"
-    except TypeError:
-        # backfill_delivery may not return a tuple - handle gracefully
-        try:
-            from backfill_supplementary import backfill_delivery as bd
-            bd([target_date], session)
-            return "OK"
-        except Exception as exc:
-            return f"FAILED: {exc}"
+        backfill_delivery([target_date], session)
+        return "OK"
     except Exception as exc:
         return f"FAILED: {exc}"
 
